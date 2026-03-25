@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Interview AI">
+<title>Interview AI Node</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080a0f;
+    --surface: #0f1117;
+    --surface2: #161922;
+    --border: rgba(255,255,255,0.07);
+    --accent: #00e5ff;
+    --accent2: #7c3aed;
+    --accent3: #f59e0b;
+    --text: #eef0f5;
+    --text-muted: #6b7280;
+    --text-dim: #9ca3af;
+    --red: #ef4444;
+    --green: #10b981;
+    --safe-top: env(safe-area-inset-top, 44px);
+    --safe-bottom: env(safe-area-inset-bottom, 34px);
+    --radius: 20px;
+    --radius-sm: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none;
+  }
+
+  /* ── NOISE TEXTURE OVERLAY ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+  }
+
+  /* ── AMBIENT GLOW ── */
+  .ambient {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(80px);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .ambient-1 { width: 300px; height: 300px; background: rgba(0,229,255,0.06); top: -100px; right: -80px; }
+  .ambient-2 { width: 250px; height: 250px; background: rgba(124,58,237,0.08); bottom: 100px; left: -80px; }
+
+  /* ── MAIN LAYOUT ── */
+  #app {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    padding-top: var(--safe-top);
+    padding-bottom: var(--safe-bottom);
+    z-index: 1;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 20px 8px;
+    flex-shrink: 0;
+  }
+  .logo {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--text-dim);
+  }
+  .logo-dot {
+    width: 8px; height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--accent);
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%,100% { opacity:1; transform:scale(1); }
+    50% { opacity:0.5; transform:scale(0.8); }
+  }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .lang-badge {
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+    color: var(--text-dim);
+    background: var(--surface);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .lang-badge.active { border-color: var(--accent); color: var(--accent); background: rgba(0,229,255,0.08); }
+  .settings-btn {
+    width: 32px; height: 32px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--text-dim); font-size: 15px;
+  }
+
+  /* ── TRANSCRIPT + RESPONSE AREA ── */
+  .chat-area {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 12px 16px;
+    display: flex; flex-direction: column; gap: 14px;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+  .chat-area::-webkit-scrollbar { display: none; }
+
+  /* ── EMPTY STATE ── */
+  .empty-state {
+    flex: 1;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; padding: 40px 20px;
+    text-align: center;
+  }
+  .empty-icon {
+    width: 64px; height: 64px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px;
+    background: var(--surface);
+    margin-bottom: 8px;
+  }
+  .empty-title { font-size: 20px; font-weight: 700; color: var(--text); }
+  .empty-sub { font-size: 13px; color: var(--text-muted); line-height: 1.6; max-width: 260px; }
+
+  /* ── MESSAGE BUBBLES ── */
+  .msg-row { display: flex; flex-direction: column; gap: 6px; animation: slideUp 0.3s ease; }
+  @keyframes slideUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+
+  .msg-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; padding: 0 4px;
+  }
+  .msg-label.user { color: var(--accent); }
+  .msg-label.ai { color: var(--accent2); }
+
+  .bubble {
+    padding: 14px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 15px; line-height: 1.65;
+    border: 1px solid var(--border);
+    position: relative;
+  }
+  .bubble.user {
+    background: rgba(0,229,255,0.05);
+    border-color: rgba(0,229,255,0.15);
+    color: var(--text);
+    font-family: 'DM Mono', monospace; font-size: 14px;
+  }
+  .bubble.ai {
+    background: rgba(124,58,237,0.06);
+    border-color: rgba(124,58,237,0.15);
+    color: var(--text);
+  }
+  .bubble.ai.jp {
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 16px; line-height: 2.4;
+  }
+
+  /* ── FURIGANA ── */
+  ruby { ruby-align: center; }
+  ruby rt {
+    font-size: 0.5em;
+    color: var(--accent);
+    font-family: 'Noto Sans JP', sans-serif;
+    font-weight: 400;
+    letter-spacing: 0.05em;
+  }
+
+  /* ── LOADING BUBBLE ── */
+  .bubble.loading {
+    background: rgba(124,58,237,0.06);
+    border-color: rgba(124,58,237,0.15);
+    display: flex; align-items: center; gap: 6px; padding: 16px;
+  }
+  .loading-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent2);
+    animation: bounce 1.2s ease-in-out infinite;
+  }
+  .loading-dot:nth-child(2) { animation-delay: 0.2s; }
+  .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes bounce {
+    0%,60%,100% { transform:translateY(0); opacity:0.5; }
+    30% { transform:translateY(-6px); opacity:1; }
+  }
+
+  /* ── BOTTOM CONTROLS ── */
+  .bottom-bar {
+    flex-shrink: 0;
+    padding: 12px 20px 16px;
+    display: flex; flex-direction: column; gap: 12px;
+    border-top: 1px solid var(--border);
+    background: linear-gradient(to bottom, transparent, var(--bg) 20%);
+  }
+
+  /* ── STATUS LINE ── */
+  .status-line {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; color: var(--text-muted);
+  }
+  .status-indicator {
+    display: flex; align-items: center; gap: 6px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+  }
+  .status-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--text-muted);
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .status-dot.recording { background: var(--red); box-shadow: 0 0 8px var(--red); animation: blink 0.8s ease-in-out infinite; }
+  .status-dot.processing { background: var(--accent3); box-shadow: 0 0 8px var(--accent3); }
+  .status-dot.ready { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* ── WAVEFORM ── */
+  .waveform-container {
+    height: 40px;
+    display: flex; align-items: center; justify-content: center; gap: 2px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .waveform-container.active { opacity: 1; }
+  .wave-bar {
+    width: 3px; border-radius: 2px;
+    background: var(--accent);
+    min-height: 4px;
+    transition: height 0.05s ease;
+  }
+
+  /* ── RECORD BUTTON ── */
+  .record-section {
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  .record-hint {
+    font-size: 11px; color: var(--text-muted);
+    letter-spacing: 0.08em; text-transform: uppercase;
+    font-weight: 600;
+    transition: opacity 0.3s;
+  }
+  .record-btn-wrap {
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .record-ring {
+    position: absolute;
+    width: 90px; height: 90px;
+    border-radius: 50%;
+    border: 1.5px solid var(--accent);
+    opacity: 0;
+    transform: scale(0.85);
+    transition: opacity 0.3s, transform 0.3s;
+  }
+  .record-btn-wrap.pressing .record-ring {
+    opacity: 0.4;
+    transform: scale(1.15);
+    animation: ring-pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes ring-pulse {
+    0%,100% { transform:scale(1.1); opacity:0.3; }
+    50% { transform:scale(1.25); opacity:0.5; }
+  }
+
+  .record-btn {
+    width: 72px; height: 72px;
+    border-radius: 50%;
+    border: none;
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.15s, background 0.2s, border-color 0.2s, box-shadow 0.2s;
+    -webkit-touch-callout: none;
+    touch-action: none;
+  }
+  .record-btn:active, .record-btn.pressing {
+    transform: scale(0.93);
+    background: rgba(239,68,68,0.15);
+    border-color: var(--red);
+    box-shadow: 0 0 24px rgba(239,68,68,0.3);
+  }
+  .record-btn svg { transition: transform 0.2s; }
+  .record-btn.pressing svg { transform: scale(0.9); }
+  .record-icon-mic { display: block; }
+  .record-icon-stop { display: none; }
+  .record-btn.pressing .record-icon-mic { display: none; }
+  .record-btn.pressing .record-icon-stop { display: block; }
+
+  /* ── SETTINGS PANEL ── */
+  .panel-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(8px);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.3s;
+  }
+  .panel-overlay.open { opacity: 1; pointer-events: all; }
+  .panel {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: var(--surface);
+    border-radius: 24px 24px 0 0;
+    padding: 20px 24px;
+    padding-bottom: calc(24px + var(--safe-bottom));
+    border-top: 1px solid var(--border);
+    transform: translateY(100%);
+    transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .panel-overlay.open .panel { transform: translateY(0); }
+  .panel-handle {
+    width: 36px; height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    margin: 0 auto 20px;
+  }
+  .panel-title { font-size: 16px; font-weight: 700; margin-bottom: 20px; color: var(--text); }
+  .field-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .field-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); }
+  .field-input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    width: 100%;
+    outline: none;
+    -webkit-user-select: auto; user-select: auto;
+    transition: border-color 0.2s;
+  }
+  .field-input:focus { border-color: var(--accent); }
+  .field-select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    width: 100%;
+    outline: none;
+    appearance: none;
+    cursor: pointer;
+  }
+  .save-btn {
+    width: 100%; padding: 14px;
+    border-radius: 14px;
+    background: var(--accent);
+    color: #000;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700; font-size: 15px;
+    border: none; cursor: pointer;
+    margin-top: 4px;
+    letter-spacing: 0.04em;
+    transition: opacity 0.2s, transform 0.15s;
+  }
+  .save-btn:active { opacity: 0.8; transform: scale(0.98); }
+  .clear-btn {
+    width: 100%; padding: 12px;
+    border-radius: 14px;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: 'Syne', sans-serif;
+    font-weight: 600; font-size: 14px;
+    border: 1px solid var(--border); cursor: pointer;
+    margin-top: 8px;
+    transition: border-color 0.2s, color 0.2s;
+  }
+  .clear-btn:active { border-color: var(--red); color: var(--red); }
+
+  /* ── MODEL CHIPS ── */
+  .model-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .model-chip {
+    padding: 8px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    font-size: 12px; font-weight: 600; letter-spacing: 0.06em;
+    color: var(--text-muted); cursor: pointer;
+    transition: all 0.2s;
+  }
+  .model-chip.selected {
+    border-color: var(--accent2);
+    color: #c4b5fd;
+    background: rgba(124,58,237,0.12);
+  }
+
+  /* ── TIMER ── */
+  .timer {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--red);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .timer.visible { opacity: 1; }
+
+  /* ── TOAST ── */
+  .toast {
+    position: fixed; top: calc(var(--safe-top) + 60px); left: 50%; transform: translateX(-50%) translateY(-10px);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 18px;
+    font-size: 13px; font-weight: 600;
+    color: var(--text);
+    z-index: 200;
+    opacity: 0; pointer-events: none;
+    transition: all 0.25s;
+    white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="ambient ambient-1"></div>
+<div class="ambient ambient-2"></div>
+
+<div id="app">
+  <!-- HEADER -->
+  <div class="header">
+    <div class="logo">
+      <div class="logo-dot"></div>
+      Interview AI
+    </div>
+    <div class="header-right">
+      <div class="lang-badge active" id="langEN" onclick="setLang('en')">EN</div>
+      <div class="lang-badge" id="langJA" onclick="setLang('ja')">日本語</div>
+      <div class="settings-btn" onclick="openSettings()">⚙</div>
+    </div>
+  </div>
+
+  <!-- CHAT AREA -->
+  <div class="chat-area" id="chatArea">
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">🎙</div>
+      <div class="empty-title">Ready to Interview</div>
+      <div class="empty-sub">Hold the button below and speak your question. Release to transcribe and get your AI-powered answer.</div>
+    </div>
+  </div>
+
+  <!-- BOTTOM BAR -->
+  <div class="bottom-bar">
+    <div class="status-line">
+      <div class="status-indicator">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">Ready</span>
+      </div>
+      <div class="timer" id="timer">0:00</div>
+    </div>
+
+    <div class="waveform-container" id="waveform">
+      <!-- bars injected by JS -->
+    </div>
+
+    <div class="record-section">
+      <div class="record-hint" id="recordHint">Hold to speak</div>
+      <div class="record-btn-wrap" id="recordWrap">
+        <div class="record-ring"></div>
+        <button class="record-btn" id="recordBtn"
+          ontouchstart="startRecord(event)"
+          ontouchend="stopRecord(event)"
+          onmousedown="startRecord(event)"
+          onmouseup="stopRecord(event)"
+          onmouseleave="stopRecord(event)">
+          <!-- MIC ICON -->
+          <svg class="record-icon-mic" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="22"/>
+            <line x1="8" y1="22" x2="16" y2="22"/>
+          </svg>
+          <!-- STOP ICON -->
+          <svg class="record-icon-stop" width="24" height="24" viewBox="0 0 24 24" fill="var(--red)" stroke="none">
+            <rect x="4" y="4" width="16" height="16" rx="3"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS PANEL -->
+<div class="panel-overlay" id="panelOverlay" onclick="handleOverlayClick(event)">
+  <div class="panel" id="panel">
+    <div class="panel-handle"></div>
+    <div class="panel-title">Settings</div>
+
+    <div class="field-group">
+      <div class="field-label">ElevenLabs API Key (Scribe v2)</div>
+      <input type="password" class="field-input" id="elevenlabsKey" placeholder="el_xxxxxxxxxxxxxxxx" autocomplete="off" spellcheck="false">
+    </div>
+
+    <div class="field-group">
+      <div class="field-label">OpenAI API Key</div>
+      <input type="password" class="field-input" id="openaiKey" placeholder="sk-xxxxxxxxxxxxxxxx" autocomplete="off" spellcheck="false">
+    </div>
+
+    <div class="field-group">
+      <div class="field-label">System Prompt</div>
+      <textarea class="field-input" id="systemPrompt" rows="3" placeholder="You are a knowledgeable, articulate assistant. Answer clearly and thoughtfully." style="resize:none; -webkit-user-select:auto; user-select:auto;"></textarea>
+    </div>
+
+    <div class="field-group">
+      <div class="field-label">OpenAI Model</div>
+      <div class="model-chips" id="modelChips">
+        <div class="model-chip" onclick="selectModel('gpt-4o', this)">GPT-4o</div>
+        <div class="model-chip" onclick="selectModel('gpt-4.1', this)">GPT-4.1</div>
+        <div class="model-chip selected" onclick="selectModel('gpt-4.5-preview', this)">GPT-4.5</div>
+        <div class="model-chip" onclick="selectModel('gpt-4o-mini', this)">4o-mini</div>
+      </div>
+    </div>
+
+    <button class="save-btn" onclick="saveSettings()">Save Settings</button>
+    <button class="clear-btn" onclick="clearChat()">Clear Conversation</button>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── STATE ──
+let currentLang = 'en';
+let selectedModel = 'gpt-4.5-preview';
+let isRecording = false;
+let mediaRecorder = null;
+let audioChunks = [];
+let timerInterval = null;
+let timerSeconds = 0;
+let waveInterval = null;
+let audioContext = null;
+let analyser = null;
+let micStream = null;
+let waveBars = [];
+
+// ── INIT WAVEFORM ──
+const waveform = document.getElementById('waveform');
+for (let i = 0; i < 32; i++) {
+  const bar = document.createElement('div');
+  bar.className = 'wave-bar';
+  bar.style.height = '4px';
+  waveform.appendChild(bar);
+  waveBars.push(bar);
+}
+
+// ── LANGUAGE ──
+function setLang(lang) {
+  currentLang = lang;
+  document.getElementById('langEN').classList.toggle('active', lang === 'en');
+  document.getElementById('langJA').classList.toggle('active', lang === 'ja');
+}
+
+// ── SETTINGS ──
+function openSettings() {
+  document.getElementById('elevenlabsKey').value = localStorage.getItem('el_key') || '';
+  document.getElementById('openaiKey').value = localStorage.getItem('oai_key') || '';
+  document.getElementById('systemPrompt').value = localStorage.getItem('sys_prompt') ||
+    'You are a knowledgeable, articulate assistant. Answer the user\'s question clearly and thoughtfully. Be concise but complete.';
+  const savedModel = localStorage.getItem('oai_model') || 'gpt-4o';
+  selectedModel = savedModel;
+  document.querySelectorAll('.model-chip').forEach(c => {
+    c.classList.toggle('selected', c.textContent.trim().toLowerCase().replace(' ', '-') === savedModel ||
+      (savedModel === 'gpt-4o' && c.textContent.trim() === 'GPT-4o') ||
+      (savedModel === 'gpt-4.1' && c.textContent.trim() === 'GPT-4.1') ||
+      (savedModel === 'gpt-4.5-preview' && c.textContent.trim() === 'GPT-4.5') ||
+      (savedModel === 'gpt-4o-mini' && c.textContent.trim() === '4o-mini')
+    );
+  });
+  document.getElementById('panelOverlay').classList.add('open');
+}
+
+function handleOverlayClick(e) {
+  if (e.target === document.getElementById('panelOverlay')) closeSettings();
+}
+
+function closeSettings() { document.getElementById('panelOverlay').classList.remove('open'); }
+
+function selectModel(model, el) {
+  selectedModel = model;
+  document.querySelectorAll('.model-chip').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function saveSettings() {
+  const el = document.getElementById('elevenlabsKey').value.trim();
+  const oai = document.getElementById('openaiKey').value.trim();
+  const sys = document.getElementById('systemPrompt').value.trim();
+  if (el) localStorage.setItem('el_key', el);
+  if (oai) localStorage.setItem('oai_key', oai);
+  if (sys) localStorage.setItem('sys_prompt', sys);
+  localStorage.setItem('oai_model', selectedModel);
+  closeSettings();
+  showToast('✓ Settings saved');
+}
+
+function clearChat() {
+  const chat = document.getElementById('chatArea');
+  chat.innerHTML = '';
+  const empty = document.createElement('div');
+  empty.className = 'empty-state'; empty.id = 'emptyState';
+  empty.innerHTML = `<div class="empty-icon">🎙</div><div class="empty-title">Ready to Interview</div><div class="empty-sub">Hold the button below and speak your question. Release to transcribe and get your AI-powered answer.</div>`;
+  chat.appendChild(empty);
+  closeSettings();
+  showToast('Conversation cleared');
+}
+
+// ── STATUS ──
+function setStatus(state, text) {
+  const dot = document.getElementById('statusDot');
+  const label = document.getElementById('statusText');
+  dot.className = `status-dot ${state}`;
+  label.textContent = text;
+}
+
+// ── TIMER ──
+function startTimer() {
+  timerSeconds = 0;
+  const el = document.getElementById('timer');
+  el.classList.add('visible');
+  timerInterval = setInterval(() => {
+    timerSeconds++;
+    const m = Math.floor(timerSeconds / 60);
+    const s = timerSeconds % 60;
+    el.textContent = `${m}:${s.toString().padStart(2,'0')}`;
+  }, 1000);
+}
+
+function stopTimer() {
+  clearInterval(timerInterval);
+  document.getElementById('timer').classList.remove('visible');
+}
+
+// ── WAVEFORM ANIMATION ──
+function startWave(analyserNode) {
+  const data = new Uint8Array(analyserNode.frequencyBinCount);
+  function draw() {
+    if (!isRecording) return;
+    analyserNode.getByteFrequencyData(data);
+    for (let i = 0; i < waveBars.length; i++) {
+      const val = data[Math.floor(i * data.length / waveBars.length)];
+      const h = Math.max(4, (val / 255) * 36);
+      waveBars[i].style.height = h + 'px';
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+function stopWave() {
+  waveBars.forEach(b => b.style.height = '4px');
+  waveform.classList.remove('active');
+}
+
+// ── RECORDING ──
+async function startRecord(e) {
+  e.preventDefault();
+  if (isRecording) return;
+
+  const elKey = localStorage.getItem('el_key');
+  const oaiKey = localStorage.getItem('oai_key');
+  if (!elKey || !oaiKey) {
+    showToast('⚠ Add API keys in Settings');
+    openSettings();
+    return;
+  }
+
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 } });
+  } catch (err) {
+    showToast('Microphone access denied');
+    return;
+  }
+
+  // Analyser for waveform
+  audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  analyser = audioContext.createAnalyser();
+  analyser.fftSize = 64;
+  const source = audioContext.createMediaStreamSource(micStream);
+  source.connect(analyser);
+
+  // Choose best format
+  const mimeType = ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg;codecs=opus']
+    .find(m => MediaRecorder.isTypeSupported(m)) || '';
+
+  mediaRecorder = new MediaRecorder(micStream, mimeType ? { mimeType } : {});
+  audioChunks = [];
+  mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+  mediaRecorder.start(100);
+
+  isRecording = true;
+  document.getElementById('recordBtn').classList.add('pressing');
+  document.getElementById('recordWrap').classList.add('pressing');
+  document.getElementById('recordHint').textContent = 'Release to send';
+  waveform.classList.add('active');
+  startTimer();
+  startWave(analyser);
+  setStatus('recording', 'Recording...');
+}
+
+async function stopRecord(e) {
+  e?.preventDefault();
+  if (!isRecording) return;
+  isRecording = false;
+
+  document.getElementById('recordBtn').classList.remove('pressing');
+  document.getElementById('recordWrap').classList.remove('pressing');
+  document.getElementById('recordHint').textContent = 'Hold to speak';
+  stopTimer();
+  stopWave();
+
+  mediaRecorder.stop();
+  micStream.getTracks().forEach(t => t.stop());
+  if (audioContext) { audioContext.close(); audioContext = null; }
+
+  setStatus('processing', 'Transcribing...');
+
+  await new Promise(r => mediaRecorder.onstop = r);
+
+  const mimeType = mediaRecorder.mimeType || 'audio/webm';
+  const blob = new Blob(audioChunks, { type: mimeType });
+
+  await transcribeAndAnswer(blob, mimeType);
+}
+
+// ── SCRIBE v2 TRANSCRIPTION ──
+async function transcribeAndAnswer(blob, mimeType) {
+  const elKey = localStorage.getItem('el_key');
+  const oaiKey = localStorage.getItem('oai_key');
+  const model = localStorage.getItem('oai_model') || 'gpt-4.5-preview';
+  const sysPrompt = localStorage.getItem('sys_prompt') || 'You are a knowledgeable, articulate assistant. Answer the user\'s question clearly and thoughtfully. Be concise but complete.';
+
+  // Determine extension
+  const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
+  const file = new File([blob], `recording.${ext}`, { type: mimeType });
+
+  let transcript = '';
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('model_id', 'scribe_v2');
+    formData.append('language_code', currentLang === 'ja' ? 'ja' : 'en');
+
+    const res = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+      method: 'POST',
+      headers: { 'xi-api-key': elKey },
+      body: formData
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Scribe error: ${err}`);
+    }
+    const data = await res.json();
+    transcript = data.text || data.transcript || '';
+  } catch (err) {
+    showToast('Transcription failed');
+    setStatus('', 'Ready');
+    console.error(err);
+    return;
+  }
+
+  if (!transcript.trim()) {
+    showToast('No speech detected');
+    setStatus('', 'Ready');
+    return;
+  }
+
+  // Show user bubble
+  removeEmptyState();
+  appendUserBubble(transcript);
+
+  // Show loading bubble
+  setStatus('processing', 'Thinking...');
+  const loadingId = appendLoadingBubble();
+
+  // ── OPENAI ANSWER ──
+  let langInstruction = '';
+  if (currentLang === 'ja') {
+    langInstruction = `Reply in Japanese. For every kanji word, wrap it in <ruby> tags with furigana using <rt> tags. Example: <ruby>面接<rt>めんせつ</rt></ruby>. Return HTML with ruby markup.`;
+  } else {
+    langInstruction = 'Reply in English.';
+  }
+
+  try {
+    const oaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${oaiKey}`
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          { role: 'system', content: `${sysPrompt}\n\n${langInstruction}` },
+          { role: 'user', content: transcript }
+        ],
+        max_tokens: 600,
+        temperature: 0.7
+      })
+    });
+
+    if (!oaiRes.ok) {
+      const err = await oaiRes.text();
+      throw new Error(`OpenAI error: ${err}`);
+    }
+
+    const oaiData = await oaiRes.json();
+    const answer = oaiData.choices?.[0]?.message?.content || '';
+
+    removeLoadingBubble(loadingId);
+    appendAIBubble(answer, currentLang === 'ja');
+    setStatus('ready', `${model}`);
+  } catch (err) {
+    removeLoadingBubble(loadingId);
+    showToast('AI response failed');
+    setStatus('', 'Ready');
+    console.error(err);
+  }
+}
+
+// ── CHAT HELPERS ──
+function removeEmptyState() {
+  const e = document.getElementById('emptyState');
+  if (e) e.remove();
+}
+
+function appendUserBubble(text) {
+  const chat = document.getElementById('chatArea');
+  const row = document.createElement('div');
+  row.className = 'msg-row';
+  row.innerHTML = `
+    <div class="msg-label user">▲ You</div>
+    <div class="bubble user">${escapeHtml(text)}</div>
+  `;
+  chat.appendChild(row);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function appendAIBubble(text, isJP) {
+  const chat = document.getElementById('chatArea');
+  const row = document.createElement('div');
+  row.className = 'msg-row';
+  const bubbleClass = `bubble ai${isJP ? ' jp' : ''}`;
+
+  // If Japanese, text may contain ruby HTML — render as innerHTML safely
+  // Strip any non-ruby HTML tags for safety
+  let content;
+  if (isJP) {
+    content = sanitizeRubyHTML(text);
+  } else {
+    content = escapeHtml(text);
+  }
+
+  row.innerHTML = `
+    <div class="msg-label ai">◆ AI</div>
+    <div class="${bubbleClass}">${content}</div>
+  `;
+  chat.appendChild(row);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function appendLoadingBubble() {
+  const chat = document.getElementById('chatArea');
+  const id = 'loading-' + Date.now();
+  const row = document.createElement('div');
+  row.className = 'msg-row'; row.id = id;
+  row.innerHTML = `
+    <div class="msg-label ai">◆ AI</div>
+    <div class="bubble loading">
+      <div class="loading-dot"></div>
+      <div class="loading-dot"></div>
+      <div class="loading-dot"></div>
+    </div>
+  `;
+  chat.appendChild(row);
+  chat.scrollTop = chat.scrollHeight;
+  return id;
+}
+
+function removeLoadingBubble(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+// ── SANITIZE RUBY HTML ──
+// Allow only ruby, rt tags and text; strip everything else
+function sanitizeRubyHTML(html) {
+  // Replace newlines with <br>
+  let safe = html.replace(/\n/g, '<br>');
+  // Allow only <ruby>, </ruby>, <rt>, </rt>, <br>
+  safe = safe.replace(/<(?!\/?(?:ruby|rt|br)\b)[^>]*>/gi, '');
+  return safe;
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/\n/g,'<br>');
+}
+
+// ── TOAST ──
+let toastTimeout;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ── iOS AUDIO CONTEXT UNLOCK ──
+document.addEventListener('touchstart', () => {
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    audioContext.close();
+    audioContext = null;
+  }
+}, { once: true });
+
+// ── INIT ──
+setStatus('', 'Ready');
+</script>
+</body>
+</html>
